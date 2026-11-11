@@ -29,7 +29,7 @@
 </div>
 <script>
 (function(){
-  var VERSION = '1.1.0';
+  var VERSION = '1.1.1';
   var SB_URL = 'https://qeawswbursiypqovychg.supabase.co';
   var SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFlYXdzd2J1cnNpeXBxb3Z5Y2hnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTQzOTU4MzgsImV4cCI6MjEwOTk3MTgzOH0.Q_IHiGWSrqM_eOaSaEBUlQLmN-E4ddBKiSKTceOPL2Q';
   var POLL_MS = 60000;
@@ -73,10 +73,10 @@
   }
 
   // ---- Yerel hafıza (Cache Storage): her dosya bir kez indirilir, sonra cihazdan oynar ----
-  var CACHE = 'sig-media-v1', KEEP_DAYS = 7;
+  // Not: hafızadaki dosyalar otomatik silinmez.
+  var CACHE = 'sig-media-v1';
   var hasCache = !!(window.caches && window.isSecureContext !== false);
   var blobUrls = {};   // remote url -> object url
-  var usage = {}; try { usage = JSON.parse(store('sig_usage') || '{}'); } catch(e){}
 
   function localUrl(remote){
     if (!hasCache) return Promise.resolve(remote);
@@ -94,21 +94,6 @@
     }).catch(function(){ return remote; });  // hata olursa doğrudan internetten oynat
   }
 
-  function prune(list){
-    var now = Date.now();
-    list.forEach(function(i){ usage[i.url] = now; });
-    store('sig_usage', JSON.stringify(usage));
-    if (!hasCache) return;
-    caches.open(CACHE).then(function(c){
-      c.keys().then(function(keys){
-        keys.forEach(function(req){
-          var t = usage[req.url];
-          if (!t || now - t > KEEP_DAYS * 864e5) { c.delete(req); delete usage[req.url]; }
-        });
-        store('sig_usage', JSON.stringify(usage));
-      });
-    }).catch(function(){});
-  }
 
   var applySeq = 0;
   function apply(m){
@@ -127,7 +112,6 @@
     p.then(function(){
       if (seq !== applySeq) return;   // bu arada yeni liste geldiyse bırak
       items = list; msg('');
-      prune(list.map(function(i){ return { url: i.remote }; }));
       if (timer) clearTimeout(timer);
       idx = -1; next();
       dbg((m.schedule || 'zamanlama yok') + ' · ' + list.length + ' öğe · ' + (hasCache ? 'yerel' : 'online'));
