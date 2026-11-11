@@ -452,21 +452,33 @@ function openScreen(id){
       <div class="field"><label for="sN">Ekran adı</label><input type="text" id="sN" value="${esc(s.name)}"></div>
       <div class="two"><div class="field"><label for="sS">Mağaza</label><input type="text" id="sS" value="${esc(s.store||'')}" list="storeList"></div>
       <div class="field"><label for="sG">Grup</label><select id="sG"><option value="">Grup yok</option>${S.groups.map(g=>`<option value="${g.id}" ${g.id===s.group_id?'selected':''}>${esc(g.name)}</option>`).join('')}</select></div></div>
+      ${id ? `<div class="field" style="max-width:260px"><label for="sR">Görüntü yönü</label><select id="sR"><option value="0" ${!s.rotation?'selected':''}>Normal</option><option value="90" ${s.rotation===90?'selected':''}>90° döndür</option><option value="270" ${s.rotation===270?'selected':''}>270° döndür</option></select><span class="mute" style="font-size:12px">Görüntü televizyonda yan duruyorsa değiştirin.</span></div>` : ''}
       <datalist id="storeList">${[...new Set(S.screens.map(x=>x.store).filter(Boolean))].map(x=>`<option value="${esc(x)}">`).join('')}</datalist>
       ${id ? `<div class="field"><label>Şu an oynayan</label><div>${sc ? `${esc(lname(sc.playlist_id))} <span class="mute">(${esc(sc.name||'zamanlama')})</span>` : '<span class="mute">Bu ekrana atanmış yayın yok</span>'}</div></div>
+      <div class="field"><label for="pairIn">Ekranı eşleştir</label><div style="display:flex;gap:8px"><input type="text" id="pairIn" inputmode="numeric" maxlength="6" placeholder="Televizyonda görünen 6 haneli kod" style="flex:1;font-size:16px;letter-spacing:3px"><button class="btn primary" id="pairBtn">Eşleştir</button></div><span class="mute" style="font-size:12px">Uygulama ilk açıldığında televizyonda bir kod görünür. Kodu buraya girince ekran bu kayda bağlanır ve yayın başlar.</span></div>
       <div class="field"><label>Ekran kodu ve oynatıcı linki</label><div style="display:flex;gap:8px;align-items:center"><code>${esc(s.code)}</code><input type="text" readonly value="${esc(url)}" style="flex:1"><button class="btn sm" id="cpL">Kopyala</button></div></div>` : ''}
     </div>
     <div class="mfoot">${id ? `<button class="btn danger" id="delS" style="margin-right:auto">Ekranı sil</button><button class="btn" id="pvS">Önizle</button>` : ''}<button class="btn primary" id="saveS">${id ? 'Kaydet' : 'Ekran ekle'}</button></div>`, true);
   $('[data-x]').onclick = closeModal;
   $('#saveS').onclick = async () => {
     const row = { name: $('#sN').value.trim(), store: $('#sS').value.trim() || null, group_id: $('#sG').value || null };
+    if (id) row.rotation = +$('#sR').value;
     if (!row.name) return toast('Ekran adını yazın');
-    chk(id ? await sb.from('signage_screens').update(row).eq('id', id) : await sb.from('signage_screens').insert(row));
-    toast(id ? 'Ekran kaydedildi' : 'Ekran eklendi'); closeModal(); loadAll();
+    if (id) { chk(await sb.from('signage_screens').update(row).eq('id', id)); toast('Ekran kaydedildi'); closeModal(); loadAll(); return; }
+    const d = chk(await sb.from('signage_screens').insert(row).select().single());
+    toast('Ekran eklendi. Şimdi televizyondaki kodla eşleştirin.'); await loadAll(); openScreen(d.id);
   };
   if (id) {
     $('#cpL').onclick = () => { navigator.clipboard.writeText(url); toast('Link kopyalandı'); };
     $('#pvS').onclick = () => openPreview(s.code);
+    $('#pairBtn').onclick = async () => {
+      const pair = $('#pairIn').value.replace(/\D/g,'');
+      if (pair.length !== 6) return toast('Televizyondaki 6 haneli kodu girin');
+      const ex = chk(await sb.from('signage_pairings').select('pair').eq('pair', pair).maybeSingle());
+      if (!ex) return toast('Bu kod hiçbir televizyonda görünmüyor. Kodu kontrol edin.');
+      chk(await sb.from('signage_pairings').update({ screen_id: id }).eq('pair', pair));
+      toast(`${s.name} eşleştirildi. Televizyon birkaç saniye içinde yayına başlar.`); closeModal();
+    };
     $('#delS').onclick = async () => { if (!confirm(`${s.name} silinsin mi?`)) return; chk(await sb.from('signage_screens').delete().eq('id', id)); toast('Ekran silindi'); closeModal(); loadAll(); };
   }
 }
