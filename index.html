@@ -96,10 +96,11 @@ code{font:600 12px ui-monospace,Menlo,monospace;background:var(--brass-soft);pad
 .store h3{font-family:'Young Serif',serif;font-weight:400;font-size:19px;margin:0 0 12px;display:flex;align-items:baseline;gap:12px}
 .store h3 .mute{font:500 12.5px Manrope,sans-serif}
 .wall{display:flex;gap:18px;flex-wrap:wrap}
-.scr{width:132px;cursor:pointer;border:0;background:none;padding:0;text-align:left}
+.scr{cursor:pointer;border:0;background:none;padding:0;text-align:left;display:block;max-width:234px}
 .bezel{width:132px;height:234px;background:#16110e;border-radius:7px;padding:5px;position:relative;box-shadow:0 1px 0 #00000014}
 .bezel .glass{width:100%;height:100%;border-radius:3px;overflow:hidden;background:#241a14;display:flex;align-items:center;justify-content:center;color:#7d6a5b;font-size:11px;text-align:center}
-.bezel img{width:100%;height:100%;object-fit:cover;display:block}
+.bezel img,.bezel video{width:100%;height:100%;object-fit:cover;display:block}
+.bezel.land{width:234px;height:132px}
 .bezel.off .glass{filter:grayscale(1) brightness(.55)}
 .bezel .led{position:absolute;bottom:-1px;left:50%;width:14px;height:3px;margin-left:-7px;border-radius:2px;background:var(--never)}
 .bezel.on .led{background:#5fd18d} .bezel.off .led{background:var(--off)}
@@ -107,7 +108,8 @@ code{font:600 12px ui-monospace,Menlo,monospace;background:var(--brass-soft);pad
 .scr.sel .bezel{outline:3px solid var(--mokka);outline-offset:2px}
 .scr .nm{font-weight:700;font-size:12.5px;margin-top:8px;word-break:break-all;line-height:1.3}
 .scr .gp{font-size:11.5px;color:var(--mute)}
-.scr .ck{position:absolute;top:8px;left:8px;width:18px;height:18px;z-index:2}
+.ck{position:absolute;top:9px;left:9px;width:18px;height:18px;z-index:2;accent-color:var(--mokka);opacity:0}
+.wall>div:hover .ck,.ck:checked,.ck:focus-visible{opacity:1}
 
 /* tables */
 table{width:100%;border-collapse:collapse;background:var(--surface);border:1px solid var(--line);border-radius:var(--r-m);overflow:hidden}
@@ -278,6 +280,7 @@ function activeSchedule(scr){
       && (!s.start_date || d >= s.start_date) && (!s.end_date || d <= s.end_date))
     .sort((a,b) => (!!b.screen_id - !!a.screen_id) || (b.priority - a.priority) || (b.created_at > a.created_at ? 1 : -1))[0];
 }
+function orient(el,w,h){ if (w > h) el.closest('.bezel').classList.add('land'); }
 function coverOf(scr){
   const sc = activeSchedule(scr); if (!sc) return null;
   const its = itemsOf(sc.playlist_id).map(i => byId(S.media, i.media_id)).filter(Boolean);
@@ -419,7 +422,7 @@ function drawScreens(){
         const c = coverOf(s), st = statusOf(s);
         return `<div style="position:relative"><input type="checkbox" class="ck" data-ck="${s.id}" ${sel.has(s.id)?'checked':''} aria-label="${esc(s.name)} seç">
           <button class="scr ${sel.has(s.id)?'sel':''}" data-scr="${s.id}">
-          <div class="bezel ${st}"><div class="glass">${c ? (c.kind==='image' ? `<img loading="lazy" src="${pub(c.path)}" alt="">` : 'Video') : 'Yayın yok'}</div><span class="led"></span></div>
+          <div class="bezel ${st}"><div class="glass">${c ? (c.kind==='image' ? `<img loading="lazy" src="${pub(c.path)}" alt="" onload="orient(this,this.naturalWidth,this.naturalHeight)">` : `<video muted preload="metadata" src="${pub(c.path)}#t=1" onloadedmetadata="orient(this,this.videoWidth,this.videoHeight)"></video>`) : 'Yayın yok'}</div><span class="led"></span></div>
           <div class="nm">${esc(s.name)}</div><div class="gp">${esc(gname(s.group_id))}</div></button></div>`; }).join('')}</div></section>`;
     }).join('');
   } else {
