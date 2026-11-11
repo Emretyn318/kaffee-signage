@@ -39,6 +39,16 @@
   #login{max-width:360px;margin:12vh auto}
   #login input{width:100%;margin-bottom:10px}
   .days label{margin-right:8px;white-space:nowrap}
+  #pv{position:fixed;inset:0;background:rgba(20,16,12,.7);display:none;align-items:center;justify-content:center;z-index:10}
+  .pvbox{background:#fff;border-radius:12px;padding:18px;width:min(1000px,95vw);max-height:94vh;overflow:auto}
+  .pvmain{display:flex;gap:18px;margin:14px 0}
+  #pvStage{width:300px;height:533px;background:#111;border-radius:8px;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+  #pvStage img,#pvStage video{max-width:100%;max-height:100%}
+  .pvctl{display:flex;flex-direction:column;gap:12px;justify-content:center}
+  #pvStrip{display:flex;gap:10px;overflow-x:auto;padding-bottom:6px}
+  .pvt{width:120px;flex-shrink:0;cursor:pointer;border:2px solid transparent;border-radius:8px;padding:4px;font-size:12px}
+  .pvt.on{border-color:var(--acc)}
+  .pvt img,.pvt video{width:100%;height:150px;object-fit:contain;background:#111;border-radius:4px;display:block;margin-bottom:4px}
   .toast{position:fixed;bottom:20px;right:20px;background:var(--ink);color:#fff;padding:10px 16px;border-radius:8px;display:none}
 </style>
 </head>
@@ -72,6 +82,24 @@
   </main>
 </div>
 <div class="toast" id="toast"></div>
+<div id="pv" onclick="if(event.target===this)pvClose()">
+  <div class="pvbox">
+    <div class="row"><div id="pvHead" style="flex:1"></div><button class="ghost" onclick="pvClose()">Kapat</button></div>
+    <div class="pvmain">
+      <div id="pvStage"></div>
+      <div class="pvctl">
+        <div id="pvNow" class="muted"></div>
+        <div class="row">
+          <button class="ghost" onclick="pvShow(PV.k-1)">‹ Önceki</button>
+          <button class="ghost" id="pvPP" onclick="PV.play=!PV.play;this.textContent=PV.play?'Duraklat':'Oynat';if(PV.play)pvShow(PV.k)">Duraklat</button>
+          <button class="ghost" onclick="pvShow(PV.k+1)">Sonraki ›</button>
+        </div>
+        <a id="pvOpen" target="_blank" class="muted">Tam ekran oynatıcıda aç</a>
+      </div>
+    </div>
+    <div id="pvStrip"></div>
+  </div>
+</div>
 
 <script>
 const SB_URL = 'https://qeawswbursiypqovychg.supabase.co';
@@ -143,7 +171,7 @@ function renderScreens(){
       <td><code>${esc(s.code)}</code></td>
       <td><select data-sg="${s.id}"><option value="">—</option>${S.groups.map(g=>`<option value="${g.id}" ${g.id===s.group_id?'selected':''}>${esc(g.name)}</option>`).join('')}</select></td>
       <td>${st}</td>
-      <td><button class="ghost" data-cp="${esc(url)}">Oynatıcı linki</button> <a href="${esc(url)}&debug=1" target="_blank">Önizle</a></td>
+      <td><button class="ghost" data-cp="${esc(url)}">Oynatıcı linki</button> <button class="ghost" data-pv="${esc(s.code)}">Önizle</button></td>
       <td><button class="danger" data-ds="${s.id}">Sil</button></td></tr>`;
   }).join('');
   $('#t-screens').innerHTML = `
@@ -168,7 +196,37 @@ function renderScreens(){
   document.querySelectorAll('[data-ds]').forEach(e => e.onclick = async () => { if (!confirm('Ekran silinsin mi?')) return; chk(await sb.from('signage_screens').delete().eq('id', e.dataset.ds)); loadAll(); });
   document.querySelectorAll('[data-dg]').forEach(e => e.onclick = async ev => { ev.preventDefault(); if (!confirm('Grup silinsin mi?')) return; chk(await sb.from('signage_groups').delete().eq('id', e.dataset.dg)); loadAll(); });
   document.querySelectorAll('[data-cp]').forEach(e => e.onclick = () => { navigator.clipboard.writeText(e.dataset.cp); toast('Link kopyalandı'); });
+  document.querySelectorAll('[data-pv]').forEach(e => e.onclick = () => openPreview(e.dataset.pv));
 }
+
+// ---------- preview (ekranı çevrimiçi göstermez) ----------
+let PV = null;
+async function openPreview(code){
+  const { data, error } = await sb.rpc('signage_preview', { p_code: code });
+  if (error) return toast('Hata: ' + error.message);
+  const items = data.items || [];
+  const total = items.reduce((a,i) => a + i.duration, 0);
+  $('#pvHead').innerHTML = `<b>${esc(data.screen)}</b> · ${data.playlist ? esc(data.playlist) + ' · ' + items.length + ' içerik · döngü ' + total + ' sn' : '<span class="muted">Şu an yayında zamanlama yok</span>'}`;
+  $('#pvStrip').innerHTML = items.map((it,k) => `<div class="pvt" data-k="${k}">${it.kind==='video'?`<video src="${pub(it.path)}" muted preload="metadata"></video>`:`<img src="${pub(it.path)}">`}<div>${k+1}. ${esc(it.name)}<br><span class="muted">${it.duration} sn${it.kind==='video'?' · video':''}</span></div></div>`).join('');
+  $('#pvOpen').href = playerBase + '?code=' + encodeURIComponent(code) + '&preview=1&debug=1';
+  $('#pv').style.display = 'flex';
+  PV = { items, k: -1, t: null, play: true };
+  document.querySelectorAll('.pvt').forEach(e => e.onclick = () => pvShow(+e.dataset.k));
+  if (items.length) pvShow(0); else $('#pvStage').innerHTML = '';
+}
+function pvShow(k){
+  if (!PV || !PV.items.length) return;
+  clearTimeout(PV.t);
+  PV.k = (k + PV.items.length) % PV.items.length;
+  const it = PV.items[PV.k];
+  $('#pvStage').innerHTML = it.kind === 'video' ? `<video src="${pub(it.path)}" muted autoplay playsinline></video>` : `<img src="${pub(it.path)}">`;
+  document.querySelectorAll('.pvt').forEach(e => e.classList.toggle('on', +e.dataset.k === PV.k));
+  $('#pvNow').textContent = `${PV.k+1}/${PV.items.length} · ${it.name} · ${it.duration} sn`;
+  const go = () => { if (PV && PV.play) pvShow(PV.k + 1); };
+  const v = $('#pvStage video');
+  if (v) v.onended = go; else PV.t = setTimeout(go, it.duration * 1000);
+}
+function pvClose(){ if (PV) clearTimeout(PV.t); PV = null; $('#pv').style.display = 'none'; $('#pvStage').innerHTML = ''; }
 
 // ---------- media ----------
 function slug(n){ return n.normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/ı/g,'i').replace(/[^a-zA-Z0-9._-]+/g,'_'); }

@@ -29,7 +29,7 @@
 </div>
 <script>
 (function(){
-  var VERSION = '1.1.1';
+  var VERSION = '1.2.0';
   var SB_URL = 'https://qeawswbursiypqovychg.supabase.co';
   var SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFlYXdzd2J1cnNpeXBxb3Z5Y2hnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTQzOTU4MzgsImV4cCI6MjEwOTk3MTgzOH0.Q_IHiGWSrqM_eOaSaEBUlQLmN-E4ddBKiSKTceOPL2Q';
   var POLL_MS = 60000;
@@ -37,8 +37,9 @@
   function qs(k){ var m = new RegExp('[?&]'+k+'=([^&]*)').exec(location.search); return m ? decodeURIComponent(m[1]) : null; }
   function store(k,v){ try{ if(v===undefined) return localStorage.getItem(k); localStorage.setItem(k,v);}catch(e){ return null; } }
 
+  var PREVIEW = !!qs('preview');   // önizleme: ekranı çevrimiçi göstermez, kodu kaydetmez
   var code = qs('code') || store('sig_code');
-  if (qs('code')) store('sig_code', qs('code'));
+  if (qs('code') && !PREVIEW) store('sig_code', qs('code'));
   if (qs('fit') === 'cover') document.body.className = 'cover';
   if (qs('debug')) document.getElementById('dbg').style.display = 'block';
 
@@ -59,17 +60,17 @@
 
   function fetchManifest(){
     var xhr = new XMLHttpRequest();
-    xhr.open('POST', SB_URL + '/rest/v1/rpc/signage_manifest');
+    xhr.open('POST', SB_URL + '/rest/v1/rpc/' + (PREVIEW ? 'signage_preview' : 'signage_manifest'));
     xhr.setRequestHeader('apikey', SB_KEY);
     xhr.setRequestHeader('Authorization', 'Bearer ' + SB_KEY);
     xhr.setRequestHeader('Content-Type', 'application/json');
     xhr.timeout = 20000;
     xhr.onload = function(){
       if (xhr.status !== 200) { dbg('http ' + xhr.status); return; }
-      try { var m = JSON.parse(xhr.responseText); store('sig_manifest', xhr.responseText); apply(m); } catch(e){ dbg('parse'); }
+      try { var m = JSON.parse(xhr.responseText); if (!PREVIEW) store('sig_manifest', xhr.responseText); apply(m); } catch(e){ dbg('parse'); }
     };
     xhr.onerror = xhr.ontimeout = function(){ dbg('offline, cache'); };
-    xhr.send(JSON.stringify({ p_code: code, p_info: { v: VERSION, ua: navigator.userAgent, w: screen.width, h: screen.height } }));
+    xhr.send(JSON.stringify(PREVIEW ? { p_code: code } : { p_code: code, p_info: { v: VERSION, ua: navigator.userAgent, w: screen.width, h: screen.height } }));
   }
 
   // ---- Yerel hafıza (Cache Storage): her dosya bir kez indirilir, sonra cihazdan oynar ----
@@ -149,7 +150,7 @@
   var _next = next;
   next = function(){ if (timer) { clearTimeout(timer); timer = null; } _next(); };
 
-  var cached = store('sig_manifest');
+  var cached = PREVIEW ? null : store('sig_manifest');
   if (cached) { try { apply(JSON.parse(cached)); } catch(e){} } else { msg('Yükleniyor…'); }
   fetchManifest();
   setInterval(fetchManifest, POLL_MS);
