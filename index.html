@@ -214,7 +214,7 @@ tbody tr:hover{background:#fcfbf9}
     <h2>Giriş yap</h2>
     <div class="field"><label for="em">E-posta</label><input id="em" type="email" autocomplete="username"></div>
     <div class="field"><label for="pw">Şifre</label><input id="pw" type="password" autocomplete="current-password"></div>
-    <div style="display:flex;gap:10px"><button class="btn primary" id="btnIn">Giriş yap</button><button class="btn" id="btnUp" type="button">Hesap oluştur</button></div>
+    <div style="display:flex;gap:10px"><button class="btn primary" id="btnIn">Giriş yap</button></div>
     <p id="lmsg" class="mute"></p>
   </form>
 </div>
@@ -245,6 +245,9 @@ const pub = p => `${SB_URL}/storage/v1/object/public/signage/${encodeURI(p)}`;
 const playerBase = new URL('player/', location.href).href;
 const DAYS = ['Pzt','Sal','Çar','Per','Cum','Cmt','Paz'];
 const ONLINE_MIN = 3;
+const BOLUM = new URLSearchParams(location.search).get('bolum'); // panel: ekran | muzik
+const muzikSayfa = k => /^m[a-z]/.test(k) && k !== 'media';
+const bolumde = k => !BOLUM || (BOLUM === 'muzik' ? muzikSayfa(k) : !muzikSayfa(k));
 
 let S = { groups:[], screens:[], media:[], lists:[], items:[], sched:[] };
 let view = { page:'dash', q:'', store:'', group:'', status:'', mode:'wall', sel:new Set(), list:null, mq:'', mkind:'' };
@@ -293,10 +296,6 @@ $('#btnIn').onclick = async () => {
   const r = await sb.auth.signInWithPassword({ email: $('#em').value.trim(), password: $('#pw').value });
   if (r.error) $('#lmsg').textContent = 'E-posta ya da şifre hatalı.'; else boot();
 };
-$('#btnUp').onclick = async () => {
-  const r = await sb.auth.signUp({ email: $('#em').value.trim(), password: $('#pw').value });
-  $('#lmsg').textContent = r.error ? r.error.message : 'Hesap oluşturuldu. Yönetici onayından sonra giriş yapabilirsiniz.';
-};
 $('#btnOut').onclick = async () => { await sb.auth.signOut(); location.reload(); };
 
 async function boot(){
@@ -304,7 +303,8 @@ async function boot(){
   if (!session) { $('#login').style.display='grid'; $('#app').style.display='none'; return; }
   $('#login').style.display='none'; $('#app').style.display='grid';
   $('#who').textContent = session.user.email;
-  const h = location.hash.slice(1); if (PAGES.some(p => p[0] === h)) view.page = h;
+  if (BOLUM === 'muzik') view.page = 'mdash';
+  const h = location.hash.slice(1); if (PAGES.some(p => p[0] === h && bolumde(h))) view.page = h;
   await loadAll();
 }
 
@@ -319,6 +319,7 @@ async function loadAll(){
   ]);
   if (g.error) { $('#page').innerHTML = `<div class="empty">Bu hesabın yönetici yetkisi yok. Yöneticiden yetki isteyin.</div>`; return; }
   S = { groups:g.data, screens:s.data, media:m.data, lists:l.data, items:i.data, sched:sc.data };
+  if (window.muzikYukle) await muzikYukle();
   render();
 }
 
@@ -326,10 +327,10 @@ function go(p){ view.page = p; history.replaceState(null,'','#'+p); render(); wi
 
 function render(){
   const on = S.screens.filter(s => statusOf(s) === 'on').length;
-  const counts = { screens:`${on}/${S.screens.length}`, media:S.media.length, lists:S.lists.length, sched:S.sched.length };
-  $('#nav').innerHTML = PAGES.map(([k,t]) => `<button class="${view.page===k?'on':''}" data-go="${k}">${ICON[k]}${t}${counts[k]!=null?`<span class="count">${counts[k]}</span>`:''}</button>`).join('');
+  const counts = { screens:`${on}/${S.screens.length}`, media:S.media.length, lists:S.lists.length, sched:S.sched.length, ...(window.MUZIK_SAYI ? MUZIK_SAYI() : {}) };
+  $('#nav').innerHTML = PAGES.filter(p => bolumde(p[0])).map(([k,t]) => `<button class="${view.page===k?'on':''}" data-go="${k}">${ICON[k]}${t}${counts[k]!=null?`<span class="count">${counts[k]}</span>`:''}</button>`).join('');
   $$('[data-go]').forEach(b => b.onclick = () => go(b.dataset.go));
-  ({ dash:pDash, screens:pScreens, media:pMedia, lists:pLists, sched:pSched })[view.page]();
+  (({ dash:pDash, screens:pScreens, media:pMedia, lists:pLists, sched:pSched, ...(window.MUZIK_SAYFA || {}) })[view.page] || pDash)();
 }
 function head(t, sub, actions=''){ $('#ttl').textContent = t; $('#sub').innerHTML = sub || ''; $('#topAct').innerHTML = actions; }
 
@@ -665,7 +666,8 @@ function openSched(id){
 }
 
 setInterval(() => { if ($('#app').style.display !== 'none' && !$('#mdl').classList.contains('open')) loadAll(); }, 60000);
-boot();
+window.addEventListener('DOMContentLoaded', boot);
 </script>
+<script src="muzik.js"></script>
 </body>
 </html>
