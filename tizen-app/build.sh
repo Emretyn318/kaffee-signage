@@ -10,3 +10,6 @@ SIZE=$(stat -c%s "$HERE/../tizen/KaffeeSignage.wgt")
 VER=$(grep -o 'version="[0-9.]*"' "$HERE/KaffeeSignage/config.xml" | head -2 | tail -1 | cut -d'"' -f2)
 printf '<?xml version="1.0" encoding="UTF-8"?>\n<widget>\n  <ver>%s</ver>\n  <size>%s</size>\n  <widgetname>KaffeeSignage</widgetname>\n</widget>\n' "$VER" "$SIZE" > "$HERE/../tizen/sssp_config.xml"
 echo "OK: $SIZE bytes, v$VER"
+# Kısa adres deposu (emretyn318.github.io) varsa oraya da kopyala
+SHORT="$HERE/../../emretyn318.github.io"
+if [ -d "$SHORT/.git" ]; then cp "$HERE/../tizen/KaffeeSignage.wgt" "$HERE/../tizen/sssp_config.xml" "$SHORT/"; echo "Kısa adrese de kopyalandı: $SHORT"; fi
