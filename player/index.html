@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Kaffee Schütz Player</title>
+<style>
+  html,body{margin:0;padding:0;width:100%;height:100%;background:#000;overflow:hidden;cursor:none;font-family:sans-serif}
+  .layer{position:absolute;top:0;left:0;width:100%;height:100%;opacity:0;transition:opacity .8s ease}
+  .layer.on{opacity:1}
+  .layer img,.layer video{width:100%;height:100%;object-fit:contain;display:block;background:#000}
+  body.cover .layer img,body.cover .layer video{object-fit:cover}
+  #msg{position:absolute;left:0;right:0;top:40%;text-align:center;color:#c8a46a;font-size:3vmin;display:none}
+  #setup{position:absolute;inset:0;display:none;align-items:center;justify-content:center;flex-direction:column;color:#fff;background:#1d1a17;cursor:default}
+  #setup input{font-size:5vmin;width:40vmin;text-align:center;text-transform:uppercase;padding:1vmin;margin:2vmin}
+  #setup button{font-size:3vmin;padding:1vmin 4vmin}
+  #dbg{position:absolute;right:1vmin;bottom:1vmin;color:#666;font-size:1.4vmin;display:none}
+</style>
+</head>
+<body>
+<div id="a" class="layer"></div>
+<div id="b" class="layer"></div>
+<div id="msg"></div>
+<div id="dbg"></div>
+<div id="setup">
+  <div style="font-size:3vmin">Ekran kodunu girin</div>
+  <input id="codeIn" maxlength="12">
+  <button id="codeBtn">Kaydet</button>
+</div>
+<script>
+(function(){
+  var VERSION = '1.0.0';
+  var SB_URL = 'https://qeawswbursiypqovychg.supabase.co';
+  var SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFlYXdzd2J1cnNpeXBxb3Z5Y2hnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTQzOTU4MzgsImV4cCI6MjEwOTk3MTgzOH0.Q_IHiGWSrqM_eOaSaEBUlQLmN-E4ddBKiSKTceOPL2Q';
+  var POLL_MS = 60000;
+
+  function qs(k){ var m = new RegExp('[?&]'+k+'=([^&]*)').exec(location.search); return m ? decodeURIComponent(m[1]) : null; }
+  function store(k,v){ try{ if(v===undefined) return localStorage.getItem(k); localStorage.setItem(k,v);}catch(e){ return null; } }
+
+  var code = qs('code') || store('sig_code');
+  if (qs('code')) store('sig_code', qs('code'));
+  if (qs('fit') === 'cover') document.body.className = 'cover';
+  if (qs('debug')) document.getElementById('dbg').style.display = 'block';
+
+  var items = [], sig = '', idx = -1, timer = null, cur = 'a';
+  var msgEl = document.getElementById('msg');
+  function msg(t){ msgEl.textContent = t || ''; msgEl.style.display = t ? 'block' : 'none'; }
+  function dbg(t){ document.getElementById('dbg').textContent = 'v'+VERSION+' · '+code+' · '+t; }
+  function pub(path){ return SB_URL + '/storage/v1/object/public/signage/' + encodeURI(path); }
+
+  if (!code) {
+    var s = document.getElementById('setup'); s.style.display = 'flex';
+    document.getElementById('codeBtn').onclick = function(){
+      var v = document.getElementById('codeIn').value.trim().toUpperCase();
+      if (v) { store('sig_code', v); location.reload(); }
+    };
+    return;
+  }
+
+  function fetchManifest(){
+    var xhr = new XMLHttpRequest();
+    xhr.open('POST', SB_URL + '/rest/v1/rpc/signage_manifest');
+    xhr.setRequestHeader('apikey', SB_KEY);
+    xhr.setRequestHeader('Authorization', 'Bearer ' + SB_KEY);
+    xhr.setRequestHeader('Content-Type', 'application/json');
+    xhr.timeout = 20000;
+    xhr.onload = function(){
+      if (xhr.status !== 200) { dbg('http ' + xhr.status); return; }
+      try { var m = JSON.parse(xhr.responseText); store('sig_manifest', xhr.responseText); apply(m); } catch(e){ dbg('parse'); }
+    };
+    xhr.onerror = xhr.ontimeout = function(){ dbg('offline, cache'); };
+    xhr.send(JSON.stringify({ p_code: code, p_info: { v: VERSION, ua: navigator.userAgent, w: screen.width, h: screen.height } }));
+  }
+
+  function apply(m){
+    if (m.error === 'unknown_screen') { msg('Tanımsız ekran kodu: ' + code); items = []; return; }
+    var list = (m.items || []).map(function(i){ return { url: pub(i.path), kind: i.kind, duration: Math.max(3, i.duration || 10) }; });
+    var newSig = JSON.stringify(list);
+    dbg((m.schedule || 'zamanlama yok') + ' · ' + list.length + ' öğe');
+    if (newSig === sig) return;
+    sig = newSig; items = list;
+    preload(list);
+    if (!list.length) { msg(''); return; }
+    msg('');
+    if (timer) clearTimeout(timer);
+    idx = -1; next();
+  }
+
+  function preload(list){ list.forEach(function(i){ if (i.kind === 'image') { var im = new Image(); im.src = i.url; } }); }
+
+  function next(){
+    if (!items.length) return;
+    idx = (idx + 1) % items.length;
+    var it = items[idx];
+    var nxt = cur === 'a' ? 'b' : 'a';
+    var el = document.getElementById(nxt), old = document.getElementById(cur);
+    el.innerHTML = '';
+    if (it.kind === 'video') {
+      var v = document.createElement('video');
+      v.src = it.url; v.muted = true; v.autoplay = true; v.playsInline = true;
+      v.setAttribute('muted',''); v.setAttribute('playsinline','');
+      if (items.length === 1) v.loop = true;
+      v.onended = function(){ next(); };
+      v.onerror = function(){ timer = setTimeout(next, 1000); };
+      el.appendChild(v);
+      var p = v.play(); if (p && p.catch) p.catch(function(){});
+      timer = setTimeout(next, 10 * 60 * 1000); // emniyet
+    } else {
+      var img = document.createElement('img');
+      img.src = it.url;
+      el.appendChild(img);
+      if (items.length > 1) timer = setTimeout(next, it.duration * 1000);
+    }
+    el.className = 'layer on';
+    old.className = 'layer';
+    setTimeout(function(){ if (old.className === 'layer') old.innerHTML = ''; }, 1000);
+    cur = nxt;
+  }
+  var _next = next;
+  next = function(){ if (timer) { clearTimeout(timer); timer = null; } _next(); };
+
+  var cached = store('sig_manifest');
+  if (cached) { try { apply(JSON.parse(cached)); } catch(e){} } else { msg('Yükleniyor…'); }
+  fetchManifest();
+  setInterval(fetchManifest, POLL_MS);
+  // günlük yenileme (bellek sızıntılarına karşı)
+  setTimeout(function(){ location.reload(); }, 24 * 3600 * 1000);
+})();
+</script>
+</body>
+</html>

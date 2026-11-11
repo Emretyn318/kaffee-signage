@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Kaffee Schütz · Ekran Yönetimi</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  :root{--bg:#f6f3ee;--card:#fff;--ink:#2a2420;--mute:#8a7f74;--acc:#7a4b2a;--line:#e6dfd5;--ok:#2f8a4c;--bad:#b23b3b}
+  *{box-sizing:border-box}
+  body{margin:0;font-family:-apple-system,Segoe UI,Roboto,sans-serif;background:var(--bg);color:var(--ink);font-size:14px}
+  header{display:flex;align-items:center;gap:24px;padding:14px 24px;background:var(--ink);color:#fff}
+  header b{font-size:16px;letter-spacing:.3px}
+  nav a{color:#cdbfae;text-decoration:none;margin-right:18px;cursor:pointer}
+  nav a.on{color:#fff;border-bottom:2px solid #c8a46a;padding-bottom:3px}
+  header .sp{flex:1}
+  main{max-width:1200px;margin:24px auto;padding:0 24px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:18px;margin-bottom:18px}
+  h2{margin:0 0 12px;font-size:17px}
+  table{width:100%;border-collapse:collapse}
+  th,td{text-align:left;padding:8px 6px;border-bottom:1px solid var(--line);vertical-align:middle}
+  th{color:var(--mute);font-weight:500;font-size:12px}
+  input,select,button{font:inherit;padding:6px 9px;border:1px solid var(--line);border-radius:6px;background:#fff}
+  button{background:var(--acc);color:#fff;border:0;cursor:pointer}
+  button.ghost{background:#fff;color:var(--ink);border:1px solid var(--line)}
+  button.danger{background:#fff;color:var(--bad);border:1px solid #ebcaca}
+  .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+  .dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px;background:#bbb}
+  .dot.ok{background:var(--ok)} .dot.bad{background:var(--bad)}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:12px}
+  .tile{border:1px solid var(--line);border-radius:8px;overflow:hidden;background:#fafafa}
+  .tile .th{height:180px;background:#222;display:flex;align-items:center;justify-content:center}
+  .tile img,.tile video{max-width:100%;max-height:100%}
+  .tile .nm{padding:6px 8px;font-size:12px;word-break:break-all}
+  .tile .ac{padding:0 8px 8px}
+  .mini{width:36px;height:48px;object-fit:cover;background:#222;border-radius:4px}
+  code{background:#f1ebe2;padding:2px 6px;border-radius:4px}
+  .muted{color:var(--mute)}
+  #login{max-width:360px;margin:12vh auto}
+  #login input{width:100%;margin-bottom:10px}
+  .days label{margin-right:8px;white-space:nowrap}
+  .toast{position:fixed;bottom:20px;right:20px;background:var(--ink);color:#fff;padding:10px 16px;border-radius:8px;display:none}
+</style>
+</head>
+<body>
+<div id="login" class="card" style="display:none">
+  <h2>Ekran Yönetimi</h2>
+  <input id="em" type="email" placeholder="E-posta">
+  <input id="pw" type="password" placeholder="Şifre">
+  <div class="row"><button id="btnIn">Giriş</button><button class="ghost" id="btnUp">Hesap oluştur</button></div>
+  <p id="lmsg" class="muted"></p>
+</div>
+
+<div id="app" style="display:none">
+  <header>
+    <b>Kaffee Schütz · Ekranlar</b>
+    <nav>
+      <a data-t="screens" class="on">Ekranlar</a>
+      <a data-t="media">Medya</a>
+      <a data-t="lists">Çalma Listeleri</a>
+      <a data-t="sched">Zamanlama</a>
+    </nav>
+    <span class="sp"></span>
+    <span id="who" class="muted"></span>
+    <button class="ghost" id="btnOut">Çıkış</button>
+  </header>
+  <main>
+    <section id="t-screens"></section>
+    <section id="t-media" style="display:none"></section>
+    <section id="t-lists" style="display:none"></section>
+    <section id="t-sched" style="display:none"></section>
+  </main>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+const SB_URL = 'https://qeawswbursiypqovychg.supabase.co';
+const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFlYXdzd2J1cnNpeXBxb3Z5Y2hnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTQzOTU4MzgsImV4cCI6MjEwOTk3MTgzOH0.Q_IHiGWSrqM_eOaSaEBUlQLmN-E4ddBKiSKTceOPL2Q';
+const sb = supabase.createClient(SB_URL, SB_KEY);
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const pub = p => `${SB_URL}/storage/v1/object/public/signage/${encodeURI(p)}`;
+const playerBase = new URL('player/', location.href).href;
+const DAYS = ['Pzt','Sal','Çar','Per','Cum','Cmt','Paz'];
+let S = { groups:[], screens:[], media:[], lists:[], items:[], sched:[] };
+let curList = null;
+
+function toast(t){ const e=$('#toast'); e.textContent=t; e.style.display='block'; clearTimeout(e._t); e._t=setTimeout(()=>e.style.display='none',2500); }
+function chk(r){ if (r.error) { toast('Hata: ' + r.error.message); throw r.error; } return r.data; }
+
+// ---------- auth ----------
+$('#btnIn').onclick = async () => {
+  const r = await sb.auth.signInWithPassword({ email: $('#em').value.trim(), password: $('#pw').value });
+  if (r.error) $('#lmsg').textContent = r.error.message; else boot();
+};
+$('#btnUp').onclick = async () => {
+  const r = await sb.auth.signUp({ email: $('#em').value.trim(), password: $('#pw').value });
+  $('#lmsg').textContent = r.error ? r.error.message : 'Hesap oluşturuldu. Onay sonrası giriş yapabilirsiniz.';
+};
+$('#btnOut').onclick = async () => { await sb.auth.signOut(); location.reload(); };
+document.querySelectorAll('nav a').forEach(a => a.onclick = () => {
+  document.querySelectorAll('nav a').forEach(x => x.classList.toggle('on', x === a));
+  ['screens','media','lists','sched'].forEach(t => $('#t-'+t).style.display = t === a.dataset.t ? '' : 'none');
+});
+
+async function boot(){
+  const { data:{ session } } = await sb.auth.getSession();
+  if (!session) { $('#login').style.display='block'; $('#app').style.display='none'; return; }
+  $('#login').style.display='none'; $('#app').style.display='block';
+  $('#who').textContent = session.user.email;
+  await loadAll();
+}
+
+async function loadAll(){
+  const [g,s,m,l,i,sc] = await Promise.all([
+    sb.from('signage_groups').select('*').order('name'),
+    sb.from('signage_screens').select('*').order('name'),
+    sb.from('signage_media').select('*').order('created_at',{ascending:false}),
+    sb.from('signage_playlists').select('*').order('name'),
+    sb.from('signage_playlist_items').select('*').order('position'),
+    sb.from('signage_schedules').select('*').order('priority',{ascending:false}),
+  ]);
+  if (g.error) { $('#t-screens').innerHTML = `<div class="card">Bu hesabın yönetici yetkisi yok ya da bir hata oluştu: ${esc(g.error.message)}</div>`; return; }
+  S = { groups:g.data, screens:s.data, media:m.data, lists:l.data, items:i.data, sched:sc.data };
+  renderScreens(); renderMedia(); renderLists(); renderSched();
+}
+const gname = id => (S.groups.find(g => g.id === id) || {}).name || '—';
+const lname = id => (S.lists.find(g => g.id === id) || {}).name || '—';
+const sname = id => (S.screens.find(g => g.id === id) || {}).name || '—';
+const mediaById = id => S.media.find(m => m.id === id);
+
+// ---------- screens ----------
+function renderScreens(){
+  const now = Date.now();
+  const rows = S.screens.map(s => {
+    const age = s.last_seen ? (now - new Date(s.last_seen)) / 60000 : null;
+    const st = age === null ? '<span class="dot"></span>Hiç bağlanmadı'
+      : age < 3 ? '<span class="dot ok"></span>Çevrimiçi'
+      : `<span class="dot bad"></span>${new Date(s.last_seen).toLocaleString('tr-TR')}`;
+    const url = playerBase + '?code=' + s.code;
+    return `<tr>
+      <td><b>${esc(s.name)}</b><div class="muted">${esc(s.store||'')}</div></td>
+      <td><code>${esc(s.code)}</code></td>
+      <td><select data-sg="${s.id}"><option value="">—</option>${S.groups.map(g=>`<option value="${g.id}" ${g.id===s.group_id?'selected':''}>${esc(g.name)}</option>`).join('')}</select></td>
+      <td>${st}</td>
+      <td><button class="ghost" data-cp="${esc(url)}">Oynatıcı linki</button> <a href="${esc(url)}&debug=1" target="_blank">Önizle</a></td>
+      <td><button class="danger" data-ds="${s.id}">Sil</button></td></tr>`;
+  }).join('');
+  $('#t-screens').innerHTML = `
+    <div class="card"><h2>Ekranlar</h2>
+      <table><tr><th>Ekran</th><th>Kod</th><th>Grup</th><th>Durum</th><th></th><th></th></tr>${rows || '<tr><td colspan=6 class="muted">Henüz ekran yok</td></tr>'}</table>
+      <div class="row" style="margin-top:14px">
+        <input id="nsName" placeholder="Ekran adı (ör. BESIKTASSOL1)">
+        <input id="nsStore" placeholder="Mağaza">
+        <select id="nsGroup"><option value="">Grup seç</option>${S.groups.map(g=>`<option value="${g.id}">${esc(g.name)}</option>`).join('')}</select>
+        <button id="nsAdd">Ekran ekle</button>
+      </div></div>
+    <div class="card"><h2>Gruplar</h2>
+      <div class="row">${S.groups.map(g=>`<span><code>${esc(g.name)}</code> <a href="#" data-dg="${g.id}" class="muted">sil</a></span>`).join(' ')}</div>
+      <div class="row" style="margin-top:10px"><input id="ngName" placeholder="Yeni grup"><button id="ngAdd">Ekle</button></div></div>`;
+  $('#nsAdd').onclick = async () => {
+    const name = $('#nsName').value.trim(); if (!name) return;
+    chk(await sb.from('signage_screens').insert({ name, store: $('#nsStore').value.trim() || null, group_id: $('#nsGroup').value || null }));
+    toast('Ekran eklendi'); loadAll();
+  };
+  $('#ngAdd').onclick = async () => { const name=$('#ngName').value.trim(); if(!name) return; chk(await sb.from('signage_groups').insert({ name })); loadAll(); };
+  document.querySelectorAll('[data-sg]').forEach(e => e.onchange = async () => { chk(await sb.from('signage_screens').update({ group_id: e.value || null }).eq('id', e.dataset.sg)); toast('Grup güncellendi'); loadAll(); });
+  document.querySelectorAll('[data-ds]').forEach(e => e.onclick = async () => { if (!confirm('Ekran silinsin mi?')) return; chk(await sb.from('signage_screens').delete().eq('id', e.dataset.ds)); loadAll(); });
+  document.querySelectorAll('[data-dg]').forEach(e => e.onclick = async ev => { ev.preventDefault(); if (!confirm('Grup silinsin mi?')) return; chk(await sb.from('signage_groups').delete().eq('id', e.dataset.dg)); loadAll(); });
+  document.querySelectorAll('[data-cp]').forEach(e => e.onclick = () => { navigator.clipboard.writeText(e.dataset.cp); toast('Link kopyalandı'); });
+}
+
+// ---------- media ----------
+function slug(n){ return n.normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/ı/g,'i').replace(/[^a-zA-Z0-9._-]+/g,'_'); }
+function renderMedia(){
+  $('#t-media').innerHTML = `
+    <div class="card"><h2>Medya</h2>
+      <div class="row"><input type="file" id="up" multiple accept="image/*,video/mp4,video/webm"><button id="upBtn">Yükle</button><span id="upMsg" class="muted"></span></div>
+      <p class="muted">Dikey menüler için 2160×3840 veya 1080×1920 JPG/PNG, videolar için MP4 (H.264) önerilir.</p>
+      <div class="grid">${S.media.map(m => `<div class="tile"><div class="th">${m.kind==='video'?`<video src="${pub(m.path)}" muted></video>`:`<img loading="lazy" src="${pub(m.path)}">`}</div>
+        <div class="nm">${esc(m.name)}</div><div class="ac"><button class="danger" data-dm="${m.id}">Sil</button></div></div>`).join('')}</div></div>`;
+  $('#upBtn').onclick = async () => {
+    const files = [...$('#up').files]; if (!files.length) return;
+    for (let i = 0; i < files.length; i++) {
+      const f = files[i]; $('#upMsg').textContent = `${i+1}/${files.length} yükleniyor…`;
+      const path = `media/${Date.now()}-${slug(f.name)}`;
+      chk(await sb.storage.from('signage').upload(path, f, { contentType: f.type, cacheControl: '31536000' }));
+      chk(await sb.from('signage_media').insert({ name: f.name.replace(/\.[^.]+$/,''), path, kind: f.type.startsWith('video') ? 'video' : 'image' }));
+    }
+    $('#upMsg').textContent = ''; toast('Yüklendi'); loadAll();
+  };
+  document.querySelectorAll('[data-dm]').forEach(e => e.onclick = async () => {
+    if (!confirm('Medya silinsin mi? Çalma listelerinden de çıkar.')) return;
+    const m = mediaById(e.dataset.dm);
+    await sb.storage.from('signage').remove([m.path]);
+    chk(await sb.from('signage_media').delete().eq('id', m.id)); loadAll();
+  });
+}
+
+// ---------- playlists ----------
+function renderLists(){
+  if (curList && !S.lists.find(l => l.id === curList)) curList = null;
+  const its = S.items.filter(i => i.playlist_id === curList);
+  const total = its.reduce((a,i) => a + i.duration_s, 0);
+  $('#t-lists').innerHTML = `
+    <div class="card"><h2>Çalma Listeleri</h2>
+      <div class="row">${S.lists.map(l => `<button class="${l.id===curList?'':'ghost'}" data-sl="${l.id}">${esc(l.name)}</button>`).join('')}</div>
+      <div class="row" style="margin-top:10px"><input id="nlName" placeholder="Yeni liste adı"><button id="nlAdd">Liste oluştur</button></div></div>
+    ${curList ? `<div class="card"><div class="row"><h2 style="flex:1">${esc(lname(curList))} <span class="muted">· ${its.length} öğe · ${total} sn</span></h2><button class="danger" id="dlList">Listeyi sil</button></div>
+      <table><tr><th></th><th>İçerik</th><th>Süre (sn)</th><th></th></tr>
+      ${its.map((i,k) => { const m = mediaById(i.media_id) || {}; return `<tr>
+        <td>${m.kind==='video'?'🎬':`<img class="mini" src="${pub(m.path)}">`}</td><td>${esc(m.name)}</td>
+        <td><input type="number" min="3" style="width:80px" value="${i.duration_s}" data-du="${i.id}"></td>
+        <td><button class="ghost" data-mv="${i.id}" data-d="-1" ${k===0?'disabled':''}>↑</button> <button class="ghost" data-mv="${i.id}" data-d="1" ${k===its.length-1?'disabled':''}>↓</button> <button class="danger" data-di="${i.id}">Çıkar</button></td></tr>`; }).join('')}
+      </table>
+      <div class="row" style="margin-top:12px"><select id="addMedia">${S.media.map(m=>`<option value="${m.id}">${esc(m.name)}</option>`).join('')}</select>
+      <input type="number" id="addDur" value="10" min="3" style="width:80px"> sn <button id="addItem">Listeye ekle</button></div></div>` : ''}`;
+  document.querySelectorAll('[data-sl]').forEach(e => e.onclick = () => { curList = e.dataset.sl; renderLists(); });
+  $('#nlAdd').onclick = async () => { const name=$('#nlName').value.trim(); if(!name) return; const d = chk(await sb.from('signage_playlists').insert({ name }).select().single()); curList = d.id; loadAll(); };
+  if (!curList) return;
+  $('#dlList').onclick = async () => { if (!confirm('Liste silinsin mi?')) return; chk(await sb.from('signage_playlists').delete().eq('id', curList)); curList=null; loadAll(); };
+  $('#addItem').onclick = async () => {
+    const mid = $('#addMedia').value; if (!mid) return;
+    chk(await sb.from('signage_playlist_items').insert({ playlist_id: curList, media_id: mid, duration_s: +$('#addDur').value || 10, position: its.length ? its[its.length-1].position + 1 : 0 }));
+    loadAll();
+  };
+  document.querySelectorAll('[data-du]').forEach(e => e.onchange = async () => { chk(await sb.from('signage_playlist_items').update({ duration_s: Math.max(3, +e.value) }).eq('id', e.dataset.du)); toast('Süre kaydedildi'); loadAll(); });
+  document.querySelectorAll('[data-di]').forEach(e => e.onclick = async () => { chk(await sb.from('signage_playlist_items').delete().eq('id', e.dataset.di)); loadAll(); });
+  document.querySelectorAll('[data-mv]').forEach(e => e.onclick = async () => {
+    const k = its.findIndex(i => i.id === e.dataset.mv), j = k + (+e.dataset.d);
+    const arr = its.slice(); [arr[k], arr[j]] = [arr[j], arr[k]];
+    await Promise.all(arr.map((it,p) => sb.from('signage_playlist_items').update({ position: p }).eq('id', it.id)));
+    loadAll();
+  });
+}
+
+// ---------- schedules ----------
+function renderSched(){
+  const rows = S.sched.map(s => `<tr>
+    <td><b>${esc(s.name||'')}</b></td><td>${esc(lname(s.playlist_id))}</td>
+    <td>${s.screen_id ? 'Ekran: '+esc(sname(s.screen_id)) : 'Grup: '+esc(gname(s.group_id))}</td>
+    <td>${s.days.length===7?'Her gün':s.days.map(d=>DAYS[d-1]).join(', ')}</td>
+    <td>${s.start_time.slice(0,5)}–${s.end_time.slice(0,5)}</td>
+    <td>${s.start_date||s.end_date ? `${s.start_date||'…'} → ${s.end_date||'…'}` : '—'}</td>
+    <td>${s.priority}</td>
+    <td><input type="checkbox" data-ac="${s.id}" ${s.active?'checked':''}></td>
+    <td><button class="danger" data-dsc="${s.id}">Sil</button></td></tr>`).join('');
+  $('#t-sched').innerHTML = `
+    <div class="card"><h2>Zamanlama</h2>
+      <p class="muted">Bir ekranda aynı anda birden fazla zamanlama geçerliyse önce ekrana özel olan, sonra önceliği yüksek olan oynar.</p>
+      <table><tr><th>Ad</th><th>Liste</th><th>Hedef</th><th>Günler</th><th>Saat</th><th>Tarih</th><th>Öncelik</th><th>Aktif</th><th></th></tr>${rows || '<tr><td colspan=9 class="muted">Henüz zamanlama yok</td></tr>'}</table></div>
+    <div class="card"><h2>Yeni zamanlama</h2>
+      <div class="row">
+        <input id="scName" placeholder="Ad (ör. Sıcak Menü Sabah)">
+        <select id="scList">${S.lists.map(l=>`<option value="${l.id}">${esc(l.name)}</option>`).join('')}</select>
+        <select id="scTarget"><optgroup label="Gruplar">${S.groups.map(g=>`<option value="g:${g.id}">${esc(g.name)}</option>`).join('')}</optgroup><optgroup label="Tek ekran">${S.screens.map(s=>`<option value="s:${s.id}">${esc(s.name)}</option>`).join('')}</optgroup></select>
+      </div>
+      <div class="row days" style="margin-top:10px">${DAYS.map((d,i)=>`<label><input type="checkbox" class="scDay" value="${i+1}" checked> ${d}</label>`).join('')}</div>
+      <div class="row" style="margin-top:10px">
+        Saat <input type="time" id="scFrom" value="00:00"> – <input type="time" id="scTo" value="23:59">
+        Tarih <input type="date" id="scD1"> – <input type="date" id="scD2">
+        Öncelik <input type="number" id="scPr" value="0" style="width:70px">
+        <button id="scAdd">Kaydet ve yayınla</button>
+      </div></div>`;
+  $('#scAdd').onclick = async () => {
+    const t = $('#scTarget').value; if (!t || !$('#scList').value) return toast('Liste ve hedef seçin');
+    const days = [...document.querySelectorAll('.scDay:checked')].map(e => +e.value);
+    chk(await sb.from('signage_schedules').insert({
+      name: $('#scName').value.trim() || null, playlist_id: $('#scList').value,
+      group_id: t.startsWith('g:') ? t.slice(2) : null, screen_id: t.startsWith('s:') ? t.slice(2) : null,
+      days, start_time: $('#scFrom').value, end_time: $('#scTo').value + ':59',
+      start_date: $('#scD1').value || null, end_date: $('#scD2').value || null, priority: +$('#scPr').value || 0 }));
+    toast('Yayınlandı · ekranlar 1 dk içinde güncellenir'); loadAll();
+  };
+  document.querySelectorAll('[data-ac]').forEach(e => e.onchange = async () => { chk(await sb.from('signage_schedules').update({ active: e.checked }).eq('id', e.dataset.ac)); loadAll(); });
+  document.querySelectorAll('[data-dsc]').forEach(e => e.onclick = async () => { if (!confirm('Zamanlama silinsin mi?')) return; chk(await sb.from('signage_schedules').delete().eq('id', e.dataset.dsc)); loadAll(); });
+}
+
+setInterval(() => { if ($('#app').style.display !== 'none') loadAll(); }, 60000);
+boot();
+</script>
+</body>
+</html>
