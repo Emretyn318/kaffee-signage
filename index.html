@@ -171,7 +171,8 @@ tbody tr:hover{background:#fcfbf9}
 
 /* preview */
 .pvmain{display:flex;gap:24px;align-items:center}
-#pvStage{width:300px;height:533px;background:#16110e;border-radius:8px;padding:6px;flex-shrink:0;display:flex;align-items:center;justify-content:center}
+#pvStage{width:300px;height:533px;transition:width .2s,height .2s;background:#16110e;border-radius:8px;padding:6px;flex-shrink:0;display:flex;align-items:center;justify-content:center}
+#pvStage.land{width:533px;height:300px}
 #pvStage img,#pvStage video{max-width:100%;max-height:100%;border-radius:3px}
 #pvStrip{display:flex;gap:10px;overflow-x:auto;padding:16px 0 4px}
 .pvt{width:96px;flex-shrink:0;cursor:pointer;border-radius:8px;padding:4px;font-size:11.5px;border:2px solid transparent}
@@ -482,7 +483,7 @@ async function openPreview(code){
       <div style="display:flex;flex-direction:column;gap:14px"><div id="pvNow" style="font-weight:600"></div>
         <div style="display:flex;gap:8px"><button class="btn" id="pvPrev">Önceki</button><button class="btn" id="pvPP">Duraklat</button><button class="btn" id="pvNext">Sonraki</button></div>
         <a target="_blank" class="mute" href="${playerBase}?code=${encodeURIComponent(code)}&preview=1">Tam ekran oynatıcıda aç</a></div></div>
-      <div id="pvStrip">${items.map((it,k) => `<div class="pvt" data-k="${k}">${it.kind==='video'?`<video src="${pub(it.path)}" muted preload="metadata"></video>`:`<img src="${pub(it.path)}" alt="">`}<div>${k+1}. ${esc(it.name)}</div><div class="mute">${it.duration} sn${it.kind==='video'?', video':''}</div></div>`).join('')}</div>`
+      <div id="pvStrip">${items.map((it,k) => `<div class="pvt" data-k="${k}">${it.kind==='video'?`<video src="${pub(it.path)}#t=1" muted preload="metadata"></video>`:`<img src="${pub(it.path)}" alt="">`}<div>${k+1}. ${esc(it.name)}</div><div class="mute">${it.duration} sn${it.kind==='video'?', video':''}</div></div>`).join('')}</div>`
       : '<div class="empty">Bu ekrana şu an atanmış bir zamanlama yok.</div>'}</div>`);
   $('[data-x]').onclick = closeModal;
   PV = { items, k:-1, t:null, play:true };
@@ -492,12 +493,13 @@ async function openPreview(code){
   $('#pvPP').onclick = e => { PV.play = !PV.play; e.target.textContent = PV.play ? 'Duraklat' : 'Oynat'; if (PV.play) pvShow(PV.k); else clearTimeout(PV.t); };
   pvShow(0);
 }
+function pvOrient(w,h){ const st=$('#pvStage'); if (st) st.classList.toggle('land', w > h); }
 function pvShow(k){
   if (!PV || !PV.items.length) return;
   clearTimeout(PV.t);
   PV.k = (k + PV.items.length) % PV.items.length;
   const it = PV.items[PV.k];
-  $('#pvStage').innerHTML = it.kind === 'video' ? `<video src="${pub(it.path)}" muted autoplay playsinline></video>` : `<img src="${pub(it.path)}" alt="">`;
+  $('#pvStage').innerHTML = it.kind === 'video' ? `<video src="${pub(it.path)}" muted autoplay playsinline onloadedmetadata="pvOrient(this.videoWidth,this.videoHeight)"></video>` : `<img src="${pub(it.path)}" alt="" onload="pvOrient(this.naturalWidth,this.naturalHeight)">`;
   $$('.pvt').forEach(e => e.classList.toggle('on', +e.dataset.k === PV.k));
   $('#pvNow').textContent = `${PV.k+1}/${PV.items.length}: ${it.name} (${it.duration} sn)`;
   const next = () => { if (PV && PV.play) pvShow(PV.k + 1); };
@@ -517,7 +519,7 @@ function pMedia(){
       <b>Dosyaları buraya sürükleyin</b> ya da seçmek için tıklayın<br><span class="mute">Dikey ekranlar için 1080×1920 JPG/PNG ya da MP4 (H.264) önerilir.</span><div id="upMsg" style="margin-top:8px;font-weight:600"></div></label>
     <div class="bar"><input type="search" class="grow" id="mq" placeholder="İçerik ara" value="${esc(view.mq)}">
       <div class="seg">${[['','Tümü'],['image','Görsel'],['video','Video']].map(([k,t])=>`<button data-mk="${k}" class="${view.mkind===k?'on':''}">${t}</button>`).join('')}</div></div>
-    ${list.length ? `<div class="mgrid">${list.map(m => { const u = usedIn(m.id); return `<div class="mt"><div class="th">${m.kind==='video'?`<video src="${pub(m.path)}" muted preload="metadata"></video><span class="kind">Video</span>`:`<img loading="lazy" src="${pub(m.path)}" alt="">`}</div>
+    ${list.length ? `<div class="mgrid">${list.map(m => { const u = usedIn(m.id); return `<div class="mt"><div class="th">${m.kind==='video'?`<video src="${pub(m.path)}#t=1" muted preload="metadata"></video><span class="kind">Video</span>`:`<img loading="lazy" src="${pub(m.path)}" alt="">`}</div>
       <div class="meta"><b>${esc(m.name)}</b><span class="mute">${u ? u + ' listede kullanılıyor' : 'Hiçbir listede yok'}</span></div>
       <div class="act"><span></span><button class="btn sm danger" data-dm="${m.id}">Sil</button></div></div>`; }).join('')}</div>` : '<div class="empty">İçerik bulunamadı.</div>'}`;
   const drop = $('#drop');
@@ -565,7 +567,7 @@ function pLists(){
       <div class="timeline">${its.map(i => `<i style="flex:${i.duration_s}" title="${esc((byId(S.media,i.media_id)||{}).name)}"></i>`).join('')}</div>
       <div class="seq" id="seq">${its.map((i,k) => { const m = byId(S.media, i.media_id) || {}; return `<div class="it" draggable="true" data-it="${i.id}">
         <span class="grip" title="Sürükleyerek sırala">⋮⋮</span><span class="n">${k+1}</span>
-        ${m.kind==='video' ? `<video src="${pub(m.path)}" muted preload="metadata"></video>` : `<img src="${pub(m.path)}" alt="">`}
+        ${m.kind==='video' ? `<video src="${pub(m.path)}#t=1" muted preload="metadata"></video>` : `<img src="${pub(m.path)}" alt="">`}
         <div><b>${esc(m.name)}</b><div class="mute" style="font-size:12px">${m.kind==='video'?'Video':'Görsel'}</div></div>
         <div class="dur"><input type="number" min="3" value="${i.duration_s}" data-du="${i.id}" aria-label="Süre"> sn</div>
         <button class="btn sm danger" data-di="${i.id}">Çıkar</button></div>`; }).join('') || '<div class="empty">Liste boş. "İçerik ekle" ile başlayın.</div>'}</div>` : '<div class="empty">Soldan bir liste seçin ya da yeni liste oluşturun.</div>'}</div></div>`;
@@ -593,7 +595,7 @@ function pLists(){
 function openPicker(L, its){
   const picked = new Set();
   modal(`<div class="mhead"><h2>${esc(L.name)} listesine içerik ekle</h2><input type="search" id="pq" placeholder="Ara"><button class="btn sm" data-x>Kapat</button></div>
-    <div class="mbody"><div class="mgrid" id="pg">${S.media.map(m => `<div class="mt pick" data-pm="${m.id}" data-name="${esc(m.name.toLowerCase())}"><div class="th">${m.kind==='video'?`<video src="${pub(m.path)}" muted preload="metadata"></video><span class="kind">Video</span>`:`<img loading="lazy" src="${pub(m.path)}" alt="">`}</div><div class="meta"><b>${esc(m.name)}</b></div></div>`).join('')}</div></div>
+    <div class="mbody"><div class="mgrid" id="pg">${S.media.map(m => `<div class="mt pick" data-pm="${m.id}" data-name="${esc(m.name.toLowerCase())}"><div class="th">${m.kind==='video'?`<video src="${pub(m.path)}#t=1" muted preload="metadata"></video><span class="kind">Video</span>`:`<img loading="lazy" src="${pub(m.path)}" alt="">`}</div><div class="meta"><b>${esc(m.name)}</b></div></div>`).join('')}</div></div>
     <div class="mfoot"><label class="mute" style="margin-right:auto;display:flex;align-items:center;gap:8px">Her içerik için süre <input type="number" id="pd" value="10" min="3" style="width:70px"> sn</label><button class="btn primary" id="pAdd" disabled>Ekle</button></div>`);
   $('[data-x]').onclick = closeModal;
   $('#pq').oninput = e => { const q = e.target.value.toLowerCase(); $$('[data-pm]').forEach(t => t.style.display = t.dataset.name.includes(q) ? '' : 'none'); };
